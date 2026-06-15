@@ -1,0 +1,18 @@
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f1ea;color:#222}
+#app{display:flex;flex-direction:column;height:100vh;max-height:760px;background:#fff;box-shadow:0 10px 40px rgba(0,0,0,.08)}
+#toolbar{display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:0.5px solid #ddd;flex-wrap:wrap;background:#fafafa}
+#toolbar label{font-size:12px;color:#666}
+#toolbar input[type=range]{width:72px}
+.color-input{width:26px;height:26px;border:none;padding:0;background:none;cursor:pointer}
+.val{font-size:12px;font-weight:600;min-width:24px}
+.tbtn{padding:4px 10px;font-size:12px;border-radius:6px;border:1px solid #bbb;background:transparent;cursor:pointer}
+.tbtn.on{background:#222;color:#fff;border-color:#222}
+.sep{width:1px;height:18px;background:#ddd}
+#cwrap{flex:1;position:relative;overflow:hidden;cursor:crosshair;background:#fff}
+#gc{position:absolute;top:0;left:0;width:100%;height:100%;touch-action:none}
+#hud{position:absolute;bottom:8px;left:10px;display:flex;align-items:center;gap:8px;pointer-events:none}
+#hud span{font-size:11px;color:#888}
+#itrack{width:90px;height:4px;background:#ddd;border-radius:2px;overflow:hidden}
+#ifill{height:4px;border-radius:2px;background:#333;width:100%}
