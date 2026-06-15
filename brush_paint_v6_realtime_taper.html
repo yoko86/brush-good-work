@@ -164,8 +164,8 @@ function outEnv(i,total){
 // env=1でデータを生成してキャッシュ（ランダム値を固定）
 function buildData(x,y,pressure,vx,vy,rgb){
   const isOil=(mode==='oil');
-  const pressC=Math.pow(pressure,1.5);
-  const spread=pressC*bSize*0.55;
+  const pressC=Math.pow(pressure,1.0);
+  const spread=pressC*bSize*0.35;
   const inkF=Math.pow(inkVol,0.35);
   const n=bristles.length;
   const pos=new Float32Array(n*2);
@@ -179,11 +179,11 @@ function buildData(x,y,pressure,vx,vy,rgb){
     const edge=1-Math.sqrt(br.dx*br.dx+br.dy*br.dy)*0.55;
     let o=pressC*inkF*br.ir*edge*pNoise;
     if(isOil) o*=(0.45+visc*0.55); else o*=(0.55+pressure*0.45);
-    op[i]=Math.max(0.1,Math.min(1,o));
+    op[i]=Math.max(0.3,Math.min(1,o));
     const base=bSize*(isOil?0.32:0.80);
     sz[i]=Math.max(0.5,base*(isOil
-      ?(0.5+pressC*0.6)*(0.7+Math.random()*0.6)
-      :(0.3+pressC*0.9)*(0.8+Math.random()*0.4)));
+      ?(0.2+pressC*0.8)*(0.7+Math.random()*0.6)
+      :(0.2+pressC*1.0)*(0.8+Math.random()*0.4)));
   }
   return{x,y,pos,op,sz,n,hardness:isOil?0.25+visc*0.3:0.55+pressure*0.15,rgb:[...rgb]};
 }
@@ -198,7 +198,7 @@ function applyEnv(d,env){
     pos2[j*2  ]=d.x+(d.pos[j*2  ]-d.x)*env;
     pos2[j*2+1]=d.y+(d.pos[j*2+1]-d.y)*env;
     op2[j]=d.op[j]*env;
-    sz2[j]=Math.max(0.5,d.sz[j]*env);
+    sz2[j]=Math.max(0.1,d.sz[j]*env);
   }
   return{...d,pos:pos2,op:op2,sz:sz2};
 }
