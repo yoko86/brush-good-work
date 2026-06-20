@@ -163,10 +163,10 @@ function outEnv(i,total){
 }
 
 // env=1でデータを生成してキャッシュ（ランダム値を固定）
-function buildData(x,y,pressure,vx,vy,rgb){
+function buildData(x,y,pressure,vx,vy,rgb, spreadMult = 1.0){
   const isOil=(mode==='oil');
   const pressC=Math.pow(pressure,1.0);
-  const spread=pressC*bSize*0.35;
+  const spread=pressC*bSize*0.35 * spreadMult;
   const inkF=Math.pow(inkVol,0.35);
   const n=bristles.length;
   const pos=new Float32Array(n*2);
@@ -226,7 +226,7 @@ function flushData(d){
 }
 
 // リアルタイム描画：入りenvのみ適用してそのまま描く
-function drawLive(x,y,pressure,vx,vy){
+function drawLive(x,y,pressure,vx,vy, spreadMult = 1.0){
   if(inkVol<=0.005)return;
   const isOil=(mode==='oil');
   const speed=Math.sqrt(vx*vx+vy*vy);
@@ -237,9 +237,42 @@ function drawLive(x,y,pressure,vx,vy){
   const i=rawPath.length;
   const env=inEnv(i);
   const rgb=hexRgb(document.getElementById('cpick').value);
-  const d=buildData(x,y,pressure,vx,vy,rgb);
+  const d=buildData(x,y,pressure,vx,vy,rgb, spreadMult);
   savedData.push(d);
   flushData(applyEnv(d,env));
+}
+
+
+let dwellTimer = null;
+let dwellFrames = 0;
+
+function dwellLoop() {
+  if (!painting) {
+    dwellTimer = null;
+    return;
+  }
+  dwellFrames++;
+
+  if (dwellFrames > 8 && dwellFrames % 2 === 0) {
+    // 広がり倍率: 最大2.5倍まで、徐々に大きくなる
+    const spreadMult = Math.min(3.5, 1.0 + (dwellFrames - 10) * 0.03);
+
+    if (rawPath.length > taperLen) {
+      
+      // 広がり倍率: 最大2.5倍まで、徐々に大きくなる
+      const spreadMult = Math.min(2.5, 1.0 + (dwellFrames - 10) * 0.015);
+
+      // インク残量が少しでもある場合のみ広がる
+      if (inkVol > 0.005) {
+        // 動いていなくてもパスとして記録し、描画する
+        rawPath.push({x: px, y: py, p: pp, vx: 0, vy: 0});
+        drawLive(px, py, pp, 0, 0, spreadMult);
+      }
+      
+    }
+  }
+  // ループ継続
+  dwellTimer = requestAnimationFrame(dwellLoop);
 }
 
 // PointerUp：末尾taperLen点だけ白で消してから抜きenvで再描画
@@ -301,6 +334,9 @@ canvas.addEventListener('pointerdown',e=>{
   genBristles(mode==='sumi'?30:20);
   rawPath.push({x:q.x,y:q.y,p:q.p,vx:0,vy:0});
   drawLive(q.x,q.y,q.p,0,0);
+  dwellFrames = 0;
+  if(!dwellTimer) dwellTimer = requestAnimationFrame(dwellLoop);
+  // ▲▲ ここまで追加 ▲▲
 });
 
 canvas.addEventListener('pointermove',e=>{
@@ -310,6 +346,8 @@ canvas.addEventListener('pointermove',e=>{
   const dx=q.x-px,dy=q.y-py;
   const dist=Math.sqrt(dx*dx+dy*dy);
   if(dist<1.5)return;
+  dwellFrames = 0;
+
   const vx=dx*0.5+pvx*0.5,vy=dy*0.5+pvy*0.5;
   pvx=vx;pvy=vy;
   const steps=Math.max(1,Math.ceil(dist/(bSize*0.15)));
@@ -322,8 +360,19 @@ canvas.addEventListener('pointermove',e=>{
   px=q.x;py=q.y;pp=q.p;
 });
 
-canvas.addEventListener('pointerup',e=>{e.preventDefault();painting=false;finalizeStroke();});
-canvas.addEventListener('pointerleave',e=>{e.preventDefault();if(painting){painting=false;finalizeStroke();}});
+canvas.addEventListener('pointerup',e=>{
+  e.preventDefault();painting=false;
+  if(dwellTimer){ cancelAnimationFrame(dwellTimer); dwellTimer=null; }
+  finalizeStroke();
+});
+canvas.addEventListener('pointerleave',e=>{
+  e.preventDefault();
+  if(painting){
+    painting=false;
+    if(dwellTimer){ cancelAnimationFrame(dwellTimer); dwellTimer=null; }
+    finalizeStroke();
+  }
+});
 canvas.style.touchAction='none';
 window.addEventListener('resize',()=>{resize();redrawAll();});
 </script>
