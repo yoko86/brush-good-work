@@ -291,10 +291,7 @@ function dwellLoop() {
   }
   dwellFrames++;
 
-  if (dwellFrames > 2 && dwellFrames % 2 === 0) {
-    // 広がり倍率: 最大2.5倍まで、徐々に大きくなる
-    const spreadMult = Math.min(3.5, 1.0 + (dwellFrames - 10) * 0.03);
-
+  if (dwellFrames > 1 && dwellFrames % 1 === 0) {
     if (rawPath.length > 5) {
       
       // 広がり倍率: 最大2.5倍まで、徐々に大きくなる
@@ -314,35 +311,6 @@ function dwellLoop() {
   dwellTimer = requestAnimationFrame(dwellLoop);
 }
 
-// PointerUp：末尾taperLen点だけ白で消してから抜きenvで再描画
-// function finalizeStroke(){
-//   const total=rawPath.length;
-//   if(total<2){rawPath=[];savedData=[];return;}
-
-//   const tLen=Math.min(taperLen,Math.floor(total*0.45));
-//   const tailStart=total-tLen;
-
-//   // 末尾tLen点を白で塗りつぶして消す
-//   // → その領域を白矩形で上書きするのではなく、
-//   //   finishedStrokes全体+現在ストロークのtailStart点までを再描画して
-//   //   そこから抜きenvで残りを上書き
-//   wipe();
-//   for(const s of finishedStrokes)
-//     for(const d of s) flushData(d);
-
-//   // 現在ストローク確定版を構築
-//   const calls=[];
-//   for(let i=0;i<total;i++){
-//     const iEnv=inEnv(i);
-//     const oEnv=outEnv(i,total);
-//     const env=Math.min(iEnv,oEnv);
-//     calls.push(applyEnv(savedData[i], iEnv, oEnv));
-//   }
-//   for(const d of calls) flushData(d);
-
-//   finishedStrokes.push(calls);
-//   rawPath=[];savedData=[];
-// }
 
 function redrawAll(){
   wipe();
@@ -395,10 +363,7 @@ canvas.addEventListener('pointermove',e=>{
   // 💡 追加: 筆の「スピード」を計算する
   const speed = Math.sqrt(vx*vx + vy*vy);
   
-  // 💡 追加: スピードから目標の太さを計算（遅い=太い、速い=細い）
-  // 例: 速度0で2.5倍(にじむ)、速度10で1.0倍(普通)、速度15以上で0.5倍(細くなる)
-  let targetSpread = 2.5 - speed * 0.15;
-  // 太さの限界値を設定（最大2.5倍、最小0.5倍）
+  let targetSpread = 2.5 * Math.exp(-speed * 0.05);
   targetSpread = Math.max(0.1, Math.min(2.5, targetSpread));
 
   let lastX = px;
