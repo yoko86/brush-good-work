@@ -110,6 +110,7 @@ let mode='oil',bSize=80,visc=1.0,paper=0.4,taperLen=20;
 let inkVol=1.0,painting=false;
 let px=0,py=0,pp=0,pvx=0,pvy=0;
 let bristles=[];
+let currentSpread = 1.0;
 
 function genBristles(n){
   bristles=[];
@@ -149,19 +150,25 @@ let rawPath=[];
 let savedData=[];
 
 // 入りエンベロープ（インデックスiのみで決まる、リアルタイム確定）
-function inEnv(i){
-  if(i>=taperLen) return 1.0;
-  const t = i / taperLen;
-  return 0.1 + 0.9 * (1.0 - Math.pow(1.0 - t, 3));
-  // return Math.pow(Math.sin((i/taperLen)*Math.PI*0.5),0.6);
+function inEnv(len){
+  // 💡 太い筆ほど入りに必要な物理距離を自動で長くする（筆サイズの1.2倍 × スライダー比率）
+  const targetInLen = bSize * (taperLen / 20) * 1.2;
+  if(targetInLen <= 0) return 1.0;
+  if(len >= targetInLen) return 1.0;
+  
+  const t = len / targetInLen;
+  return 0.1 + 0.9 * Math.pow(Math.sin(t * Math.PI * 0.5), 0.8);
 }
 
-// 抜きエンベロープ（total確定後にしか計算できない）
-function outEnv(i,total){
-  const tLen=Math.min(taperLen,Math.floor(total*0.45));
-  if(i<total-tLen) return 1.0;
-  if(tLen <= 1) return 0.0;
-  return Math.pow(Math.cos(((i-(total-tLen))/(tLen-1))*Math.PI*0.5),0.8);
+// 抜きエンベロープ（物理距離基準）
+function outEnv(len, totalLen){
+  const targetOutLen = Math.min(bSize * (taperLen / 20) * 1.2, totalLen * 0.45);
+  if(targetOutLen <= 0) return 1.0;
+  if(len < totalLen - targetOutLen) return 1.0;
+  
+  // 終端に向かって 1.0 -> 0.0
+  const t = (totalLen - len) / targetOutLen;
+  return Math.pow(Math.sin(t * Math.PI * 0.5), 0.8);
 }
 
 // env=1でデータを生成してキャッシュ（ランダム値を固定）
@@ -238,12 +245,39 @@ function drawLive(x,y,pressure,vx,vy, spreadMult = 1.0){
     ?pressure*(0.002+speed*0.0008)*(1-visc*0.3)
     :pressure*(0.004+speed*0.0015)));
   updateHUD();
-  const i=rawPath.length;
-  const env=inEnv(i);
+
+  const lastPoint = rawPath[rawPath.length - 1];
+  const len = lastPoint ? lastPoint.len : 0;
+  const env = inEnv(len);
+  
   const rgb=hexRgb(document.getElementById('cpick').value);
   const d=buildData(x,y,pressure,vx,vy,rgb, spreadMult);
   savedData.push(d);
-  flushData(applyEnv(d,env, 1.0));
+  flushData(applyEnv(d, env, 1.0));
+}
+
+function finalizeStroke(){
+  const total=rawPath.length;
+  if(total<2){rawPath=[];savedData=[];return;}
+
+  // 💡 ストローク全体の総距離を取得
+  const totalLen = rawPath[total - 1].len;
+
+  wipe();
+  for(const s of finishedStrokes)
+    for(const d of s) flushData(d);
+
+  const calls=[];
+  for(let i=0;i<total;i++){
+    const len = rawPath[i].len; // 各点が持つ累積距離
+    const iEnv = inEnv(len);
+    const oEnv = outEnv(len, totalLen);
+    calls.push(applyEnv(savedData[i], iEnv, oEnv));
+  }
+  for(const d of calls) flushData(d);
+
+  finishedStrokes.push(calls);
+  rawPath=[];savedData=[];
 }
 
 
@@ -257,19 +291,20 @@ function dwellLoop() {
   }
   dwellFrames++;
 
-  if (dwellFrames > 8 && dwellFrames % 2 === 0) {
+  if (dwellFrames > 2 && dwellFrames % 2 === 0) {
     // 広がり倍率: 最大2.5倍まで、徐々に大きくなる
     const spreadMult = Math.min(3.5, 1.0 + (dwellFrames - 10) * 0.03);
 
-    if (rawPath.length > taperLen) {
+    if (rawPath.length > 5) {
       
       // 広がり倍率: 最大2.5倍まで、徐々に大きくなる
       const spreadMult = Math.min(2.5, 1.0 + (dwellFrames - 10) * 0.015);
 
       // インク残量が少しでもある場合のみ広がる
       if (inkVol > 0.005) {
-        // 動いていなくてもパスとして記録し、描画する
-        rawPath.push({x: px, y: py, p: pp, vx: 0, vy: 0});
+        // 💡 止まっている時は距離を進めない
+        const lastLen = rawPath[rawPath.length - 1].len;
+        rawPath.push({x: px, y: py, p: pp, vx: 0, vy: 0, len: lastLen});
         drawLive(px, py, pp, 0, 0, spreadMult);
       }
       
@@ -280,34 +315,34 @@ function dwellLoop() {
 }
 
 // PointerUp：末尾taperLen点だけ白で消してから抜きenvで再描画
-function finalizeStroke(){
-  const total=rawPath.length;
-  if(total<2){rawPath=[];savedData=[];return;}
+// function finalizeStroke(){
+//   const total=rawPath.length;
+//   if(total<2){rawPath=[];savedData=[];return;}
 
-  const tLen=Math.min(taperLen,Math.floor(total*0.45));
-  const tailStart=total-tLen;
+//   const tLen=Math.min(taperLen,Math.floor(total*0.45));
+//   const tailStart=total-tLen;
 
-  // 末尾tLen点を白で塗りつぶして消す
-  // → その領域を白矩形で上書きするのではなく、
-  //   finishedStrokes全体+現在ストロークのtailStart点までを再描画して
-  //   そこから抜きenvで残りを上書き
-  wipe();
-  for(const s of finishedStrokes)
-    for(const d of s) flushData(d);
+//   // 末尾tLen点を白で塗りつぶして消す
+//   // → その領域を白矩形で上書きするのではなく、
+//   //   finishedStrokes全体+現在ストロークのtailStart点までを再描画して
+//   //   そこから抜きenvで残りを上書き
+//   wipe();
+//   for(const s of finishedStrokes)
+//     for(const d of s) flushData(d);
 
-  // 現在ストローク確定版を構築
-  const calls=[];
-  for(let i=0;i<total;i++){
-    const iEnv=inEnv(i);
-    const oEnv=outEnv(i,total);
-    const env=Math.min(iEnv,oEnv);
-    calls.push(applyEnv(savedData[i], iEnv, oEnv));
-  }
-  for(const d of calls) flushData(d);
+//   // 現在ストローク確定版を構築
+//   const calls=[];
+//   for(let i=0;i<total;i++){
+//     const iEnv=inEnv(i);
+//     const oEnv=outEnv(i,total);
+//     const env=Math.min(iEnv,oEnv);
+//     calls.push(applyEnv(savedData[i], iEnv, oEnv));
+//   }
+//   for(const d of calls) flushData(d);
 
-  finishedStrokes.push(calls);
-  rawPath=[];savedData=[];
-}
+//   finishedStrokes.push(calls);
+//   rawPath=[];savedData=[];
+// }
 
 function redrawAll(){
   wipe();
@@ -334,13 +369,15 @@ canvas.addEventListener('pointerdown',e=>{
   rawPath=[];savedData=[];
   const q=getP(e);
   px=q.x;py=q.y;pp=q.p;pvx=0;pvy=0;
-  //ブラシを構成する細かい毛束の数
   genBristles(mode==='sumi'?30:20);
-  rawPath.push({x:q.x,y:q.y,p:q.p,vx:0,vy:0});
-  drawLive(q.x,q.y,q.p,0,0);
-  dwellFrames = 0;
-  if(!dwellTimer) dwellTimer = requestAnimationFrame(dwellLoop);
-  // ▲▲ ここまで追加 ▲▲
+  rawPath.push({x:q.x,y:q.y,p:q.p,vx:0,vy:0, len:0});
+  
+  // 💡 修正: タッチ開始時は基準の太さ(1.0)からスタート
+  currentSpread = 1.0; 
+  drawLive(q.x,q.y,q.p,0,0, currentSpread);
+  
+  if(typeof dwellFrames !== 'undefined') dwellFrames = 0;
+  if(typeof dwellTimer !== 'undefined' && !dwellTimer) dwellTimer = requestAnimationFrame(dwellLoop);
 });
 
 canvas.addEventListener('pointermove',e=>{
@@ -350,16 +387,39 @@ canvas.addEventListener('pointermove',e=>{
   const dx=q.x-px,dy=q.y-py;
   const dist=Math.sqrt(dx*dx+dy*dy);
   if(dist<1.5)return;
-  dwellFrames = 0;
+  if(typeof dwellFrames !== 'undefined') dwellFrames = 0;
 
   const vx=dx*0.5+pvx*0.5,vy=dy*0.5+pvy*0.5;
   pvx=vx;pvy=vy;
+  
+  // 💡 追加: 筆の「スピード」を計算する
+  const speed = Math.sqrt(vx*vx + vy*vy);
+  
+  // 💡 追加: スピードから目標の太さを計算（遅い=太い、速い=細い）
+  // 例: 速度0で2.5倍(にじむ)、速度10で1.0倍(普通)、速度15以上で0.5倍(細くなる)
+  let targetSpread = 2.5 - speed * 0.15;
+  // 太さの限界値を設定（最大2.5倍、最小0.5倍）
+  targetSpread = Math.max(0.1, Math.min(2.5, targetSpread));
+
+  let lastX = px;
+  let lastY = py;
+  let baseLen = rawPath[rawPath.length - 1].len;
+
   const steps=Math.max(1,Math.ceil(dist/(bSize*0.15)));
   for(let i=1;i<=steps;i++){
     const t=i/steps;
     const ix=px+dx*t,iy=py+dy*t,ip=pp+(q.p-pp)*t;
-    rawPath.push({x:ix,y:iy,p:ip,vx,vy});
-    drawLive(ix,iy,ip,vx,vy);
+
+    const segDist = Math.sqrt((ix - lastX)*(ix - lastX) + (iy - lastY)*(iy - lastY));
+    baseLen += segDist;
+    lastX = ix;
+    lastY = iy;
+    
+    // 💡 追加: 現在の太さを目標の太さに「滑らかに」近づける（ガタつき防止）
+    currentSpread += (targetSpread - currentSpread) * 0.4;
+
+    rawPath.push({x:ix,y:iy,p:ip,vx,vy, len:baseLen});
+    drawLive(ix,iy,ip,vx,vy, currentSpread);
   }
   px=q.x;py=q.y;pp=q.p;
 });
