@@ -151,7 +151,9 @@ let savedData=[];
 // 入りエンベロープ（インデックスiのみで決まる、リアルタイム確定）
 function inEnv(i){
   if(i>=taperLen) return 1.0;
-  return Math.pow(Math.sin((i/taperLen)*Math.PI*0.5),0.6);
+  const t = i / taperLen;
+  return 0.1 + 0.9 * (1.0 - Math.pow(1.0 - t, 3));
+  // return Math.pow(Math.sin((i/taperLen)*Math.PI*0.5),0.6);
 }
 
 // 抜きエンベロープ（total確定後にしか計算できない）
@@ -191,7 +193,8 @@ function buildData(x,y,pressure,vx,vy,rgb, spreadMult = 1.0){
 }
 
 // env倍でposを中心に収縮、op・szもスケール
-function applyEnv(d,env){
+function applyEnv(d,iEnv, oEnv = 1.0){
+  const env = Math.min(iEnv, oEnv);
   if(env===1.0) return d;
   const pos2=new Float32Array(d.n*2);
   const op2=new Float32Array(d.n);
@@ -199,8 +202,9 @@ function applyEnv(d,env){
   for(let j=0;j<d.n;j++){
     pos2[j*2  ]=d.x+(d.pos[j*2  ]-d.x)*env;
     pos2[j*2+1]=d.y+(d.pos[j*2+1]-d.y)*env;
-    op2[j]=d.op[j]*Math.pow(env, 3);
-    sz2[j]=Math.max(0.1,d.sz[j]*env);
+    sz2[j] = Math.max(0.0, d.sz[j] * env);
+    const opMult = Math.pow(iEnv, 3) * Math.pow(oEnv, 3);
+    op2[j] = d.op[j] * opMult;
   }
   return{...d,pos:pos2,op:op2,sz:sz2};
 }
@@ -239,7 +243,7 @@ function drawLive(x,y,pressure,vx,vy, spreadMult = 1.0){
   const rgb=hexRgb(document.getElementById('cpick').value);
   const d=buildData(x,y,pressure,vx,vy,rgb, spreadMult);
   savedData.push(d);
-  flushData(applyEnv(d,env));
+  flushData(applyEnv(d,env, 1.0));
 }
 
 
@@ -297,7 +301,7 @@ function finalizeStroke(){
     const iEnv=inEnv(i);
     const oEnv=outEnv(i,total);
     const env=Math.min(iEnv,oEnv);
-    calls.push(applyEnv(savedData[i],env));
+    calls.push(applyEnv(savedData[i], iEnv, oEnv));
   }
   for(const d of calls) flushData(d);
 
