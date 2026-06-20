@@ -116,7 +116,12 @@ function genBristles(n){
   bristles=[];
   for(let i=0;i<n;i++){
     const a=Math.random()*Math.PI*2,r=Math.sqrt(Math.random());
-    bristles.push({dx:Math.cos(a)*r,dy:Math.sin(a)*r,ir:0.75+Math.random()*0.25});
+    bristles.push({
+      dx:Math.cos(a)*r,
+      dy:Math.sin(a)*r,
+      ir:0.75+Math.random()*0.25,
+      dryThresh: Math.random()
+    });
   }
 }
 genBristles(20);
@@ -177,21 +182,40 @@ function buildData(x,y,pressure,vx,vy,rgb, spreadMult = 1.0){
   const pressC=Math.pow(pressure,1.0);
   const spread=pressC*bSize*0.35 * spreadMult;
   const inkF=Math.pow(inkVol,0.35);
+
+  const kasure = Math.max(0.0, (0.7 - inkVol) * 2.0);
+
   const n=bristles.length;
   const pos=new Float32Array(n*2);
   const op=new Float32Array(n);
   const sz=new Float32Array(n);
+
   for(let i=0;i<n;i++){
     const br=bristles[i];
     pos[i*2  ]=x+br.dx*spread+vx*0.2;
     pos[i*2+1]=y+br.dy*spread+vy*0.2;
     const pNoise=1-paper*Math.random()*0.75;
     const edge=1-Math.sqrt(br.dx*br.dx+br.dy*br.dy)*0.55;
+
+    let brInk = 1.0;
+    if(kasure > 0){
+      // 💡 修正: 半透明のグラデーションをやめ、「完全に消える(0.0)」か「そのまま(1.0)」の2択にする！
+      if (kasure > br.dryThresh) {
+        brInk = 0.085; // 限界を超えたら問答無用で消去
+      } else {
+        brInk = 1.0; // 生き残っている間は100%の濃さをキープ
+      }
+    }
+
     let o=pressC*inkF*br.ir*edge*pNoise;
-    //o（各毛束の濃さを決める計算式）visc（粘度）
     if(isOil) o*=(0.45+visc*0.55); else o*=(0.55+pressure*0.45);
-    op[i]=Math.max(0.3,Math.min(1,o));
-    const base=bSize*(isOil?0.32:0.80);
+    
+    op[i] = Math.max(0.3, Math.min(1, o)) * brInk;
+    
+    const base=bSize*(isOil?0.50:0.80);
+
+    const kasureSize = 1.0 - (kasure * 0.4 * br.dryThresh);
+
     sz[i]=Math.max(0.5,base*(isOil
       ?(0.2+pressC*0.8)*(0.7+Math.random()*0.6)
       :(0.2+pressC*1.0)*(0.8+Math.random()*0.4)));
@@ -243,7 +267,7 @@ function drawLive(x,y,pressure,vx,vy, spreadMult = 1.0){
   const speed=Math.sqrt(vx*vx+vy*vy);
   inkVol=Math.max(0.1,inkVol-(isOil
     ?pressure*(0.002+speed*0.0008)*(1-visc*0.3)
-    :pressure*(0.004+speed*0.0015)));
+    :pressure*(0.00002+speed*0.0008)));
   updateHUD();
 
   const lastPoint = rawPath[rawPath.length - 1];
@@ -363,7 +387,7 @@ canvas.addEventListener('pointermove',e=>{
   // 💡 追加: 筆の「スピード」を計算する
   const speed = Math.sqrt(vx*vx + vy*vy);
   
-  let targetSpread = 2.5 * Math.exp(-speed * 0.05);
+  let targetSpread = 2.5 * Math.exp(-speed * 0.08);
   targetSpread = Math.max(0.1, Math.min(2.5, targetSpread));
 
   let lastX = px;
